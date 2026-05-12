@@ -2,8 +2,11 @@
 
 A knowledge graph explorer built from the Enron email corpus. 100,000 internal emails are processed through entity extraction (Claude Haiku), merged into a knowledge graph, and served via an interactive D3.js force-directed visualization with natural language querying (Claude Sonnet) grounded in both graph structure and original email content.
 
-![Screenshot](screenshot.png)
-<!-- Replace with an actual screenshot -->
+![Full graph overview](screenshots/full-graph-overview.png)
+
+![Query result highlighting subgraph](screenshots/query-result-subgraph.png)
+
+![Node detail view](screenshots/node-detail-view.png)
 
 ## Architecture
 
