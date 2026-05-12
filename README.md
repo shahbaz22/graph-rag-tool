@@ -322,10 +322,4 @@ A more thorough approach would be to concatenate the two or three most distinct 
 └── .env.example               API key template
 ```
 
-## Cost
 
-| Step | Cost |
-|---|---|
-| Build graph from 100k emails (Haiku batch) | ~$8 |
-| Query (Sonnet, ~60k tokens in / ~500 out) | ~$0.02 per query |
-| Demo day (100 queries) | ~$2 |
