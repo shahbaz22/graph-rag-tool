@@ -1,0 +1,20 @@
+# Environment & secrets
+.env
+
+# Data files (too large for git)
+data/
+graph.json
+build/results/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# OS
+.DS_Store
+
+# Claude Code
+.claude/

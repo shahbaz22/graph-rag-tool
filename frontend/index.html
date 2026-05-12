@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enron GraphRAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    font-family: 'Inter', system-ui, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: rgba(10,10,10,0.97);
+    border-bottom: 1px solid #181818;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  header h1 { font-size: 14px; font-weight: 600; color: #fff; }
+  header .sub { font-size: 11px; color: #777; margin-top: 1px; }
+
+  #stats { margin-left: auto; font-size: 11px; color: #777; display: flex; gap: 14px; }
+  #stats b { color: #999; }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+  #graph-container { flex: 1; position: relative; overflow: hidden; background: #0a0a0a; }
+  #graph-container svg { width: 100%; height: 100%; display: block; }
+
+  /* sidebar */
+  #sidebar {
+    width: 290px;
+    background: #0a0a0a;
+    border-left: 1px solid #151515;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-track { background: transparent; }
+  #sidebar::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+
+  .panel { padding: 13px 14px; border-bottom: 1px solid #141414; }
+  .panel-title { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; font-weight: 500; }
+
+  input[type=text], textarea {
+    width: 100%;
+    background: #101010;
+    border: 1px solid #1e1e1e;
+    border-radius: 5px;
+    color: #ccc;
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    font-family: inherit;
+  }
+  input[type=text]:focus, textarea:focus { border-color: #ffffff18; }
+  textarea { resize: none; line-height: 1.4; font-size: 13px; }
+
+  #search-results { margin-top: 4px; max-height: 130px; overflow-y: auto; }
+  .sr-item {
+    padding: 5px 7px; cursor: pointer; border-radius: 4px;
+    font-size: 12px; color: #666; display: flex;
+    justify-content: space-between; align-items: center; transition: background 0.1s;
+  }
+  .sr-item:hover { background: #141414; color: #ddd; }
+  .sr-type { font-size: 10px; color: #666; }
+
+  .slider-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+  #node-count-val { width: 32px; color: #999; font-variant-numeric: tabular-nums; }
+  #node-count-slider {
+    flex: 1; height: 3px; border-radius: 2px;
+    background: #1c1c1c; cursor: pointer; outline: none;
+    -webkit-appearance: none; appearance: none; accent-color: #4a9eff;
+  }
+  #node-count-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 11px; height: 11px;
+    background: #4a9eff; border-radius: 50%; cursor: pointer;
+  }
+  #total-nodes { color: #666; }
+
+  .type-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .type-filter {
+    display: flex; align-items: center; gap: 4px; cursor: pointer;
+    font-size: 11px; color: #888; user-select: none;
+  }
+  .type-filter input { display: none; }
+  .type-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1.5px solid transparent; transition: opacity 0.15s;
+  }
+  .type-filter input:not(:checked) ~ .type-dot { opacity: 0.2; }
+  .type-filter input:not(:checked) ~ .type-label { opacity: 0.35; }
+
+  #query-btn {
+    margin-top: 7px; width: 100%;
+    background: #4a9eff; color: #000;
+    border: none; border-radius: 5px;
+    padding: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: background 0.15s;
+  }
+  #query-btn:hover { background: #6aafff; }
+  #query-btn:disabled { background: #161616; color: #333; cursor: not-allowed; }
+
+  #query-examples { margin-top: 7px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-size: 10px; background: #101010; border: 1px solid #191919;
+    border-radius: 20px; padding: 3px 8px; cursor: pointer;
+    color: #888; transition: all 0.15s; white-space: nowrap;
+  }
+  .chip:hover { color: #ccc; border-color: #2a2a2a; }
+
+  #result-text { font-size: 12px; line-height: 1.6; color: #ccc; }
+  #result-text .section-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 500; margin-bottom: 5px; }
+  #result-text .answer { font-size: 13px; color: #e0e0e0; margin-bottom: 12px; line-height: 1.6; }
+  #result-text .detail-list { list-style: none; padding: 0; margin: 0 0 12px 0; }
+  #result-text .detail-list li { padding: 4px 0 4px 14px; position: relative; color: #bbb; font-size: 12px; line-height: 1.6; border-bottom: 1px solid #141414; }
+  #result-text .detail-list li:last-child { border-bottom: none; }
+  #result-text .detail-list li::before { content: ''; position: absolute; left: 0; top: 12px; width: 4px; height: 4px; border-radius: 50%; background: #4a9eff; }
+  #result-text .paths-section { margin-top: 4px; }
+  #result-text .path-item { font-size: 11px; color: #9ab; padding: 5px 8px; background: #111; border: 1px solid #1a1a1a; border-radius: 4px; margin-bottom: 4px; line-height: 1.6; word-break: break-word; }
+  #result-text .path-item .rel { color: #555; font-size: 10px; }
+  #result-text strong, #result-text b { color: #fff; font-weight: 600; }
+  #result-text .streaming-dots { display: inline-block; animation: pulse 1.5s ease-in-out infinite; color: #4a9eff; }
+  #result-meta { margin-top: 5px; font-size: 10px; color: #777; }
+  #reset-btn {
+    margin-top: 7px; background: #101010; border: 1px solid #1e1e1e;
+    border-radius: 5px; color: #888; padding: 5px 12px;
+    font-size: 11px; cursor: pointer; font-family: inherit; transition: all 0.15s;
+  }
+  #reset-btn:hover { color: #ccc; }
+
+  #node-label { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+  #node-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 7px; }
+  #node-desc { font-size: 12px; color: #999; line-height: 1.5; margin-bottom: 7px; }
+  #node-conns { font-size: 11px; color: #888; line-height: 2; max-height: 120px; overflow-y: auto; }
+  #explore-hood-btn {
+    margin-top: 7px; background: #101010; border: 1px solid #1e1e1e;
+    border-radius: 5px; color: #888; padding: 5px 12px;
+    font-size: 11px; cursor: pointer; font-family: inherit; transition: all 0.15s;
+  }
+  #explore-hood-btn:hover { color: #ccc; }
+
+  #node-emails { max-height: 300px; overflow-y: auto; }
+  #node-emails::-webkit-scrollbar { width: 4px; }
+  #node-emails::-webkit-scrollbar-track { background: transparent; }
+  #node-emails::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+  .emails-title { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; font-weight: 500; position: sticky; top: 0; background: #0a0a0a; padding: 2px 0; z-index: 1; }
+  .email-card {
+    background: #111; border: 1px solid #1a1a1a; border-radius: 5px;
+    padding: 8px 10px; margin-bottom: 6px; font-size: 11px; line-height: 1.5;
+  }
+  .email-card .email-subject { color: #ddd; font-weight: 500; margin-bottom: 3px; }
+  .email-card .email-meta { color: #666; font-size: 10px; margin-bottom: 4px; }
+  .email-card .email-body {
+    color: #888; font-size: 10px; line-height: 1.4;
+    max-height: 60px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-word;
+    transition: max-height 0.2s ease;
+  }
+  .email-card .email-body.expanded { max-height: 300px; }
+  .email-card .email-body::-webkit-scrollbar { width: 3px; }
+  .email-card .email-body::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .email-card .email-toggle { color: #4a9eff; font-size: 10px; cursor: pointer; margin-top: 3px; }
+  .email-card .email-toggle:hover { color: #6aafff; }
+
+  #legend { padding: 13px 14px; }
+  .legend-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .legend-title { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 500; }
+  .legend-toggle {
+    display: flex; gap: 0; border: 1px solid #222; border-radius: 4px; overflow: hidden; margin-left: auto;
+  }
+  .legend-toggle-btn {
+    font-size: 9px; padding: 2px 7px; cursor: pointer;
+    background: transparent; border: none; color: #555;
+    font-family: inherit; transition: all 0.15s;
+  }
+  .legend-toggle-btn.active { background: #1e1e1e; color: #ccc; }
+  .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 11px; color: #888; }
+  .ldot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  #zoom-controls {
+    position: absolute; bottom: 14px; right: 14px; z-index: 5;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .zoom-btn {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: rgba(16,16,16,0.9); border: 1px solid #222;
+    color: #888; font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit; transition: all 0.15s;
+  }
+  .zoom-btn:hover { color: #ccc; border-color: #444; }
+
+  #loading {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #0a0a0a; z-index: 50; gap: 12px;
+  }
+  #loading-text { color: #777; font-size: 12px; letter-spacing: 0.08em; }
+  .spinner {
+    width: 24px; height: 24px;
+    border: 1.5px solid #181818; border-top-color: #4a9eff;
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  /* SVG graph styles */
+  .graph-link { stroke: rgba(255,255,255,0.35); stroke-width: 0.7; transition: stroke 0.15s, stroke-opacity 0.15s, stroke-width 0.15s; }
+  .graph-link.hover-connected { stroke: #a0b4d2; stroke-width: 2; stroke-opacity: 1; }
+  .graph-link.hover-dim { stroke: rgba(255,255,255,0.03); stroke-width: 0.15; }
+  .graph-link.hl-active { stroke: #e8c547; stroke-width: 2; stroke-opacity: 0.8; }
+  .graph-link.hl-dim { stroke: rgba(255,255,255,0.02); stroke-width: 0.15; }
+
+  .graph-node { cursor: pointer; transition: fill 0.15s; }
+  .graph-node-label { fill: rgba(255,255,255,0.7); font-size: 4px; pointer-events: none; text-anchor: middle; }
+  .graph-node-label.hover-label { fill: #fff; font-weight: 700; }
+  .graph-node-label.dim-label { fill: rgba(255,255,255,0.05); }
+
+  .edge-label { fill: rgba(255,255,255,0.7); font-size: 3px; pointer-events: none; text-anchor: middle; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Enron GraphRAG</h1>
+    <div class="sub">Knowledge graph explorer</div>
+  </div>
+  <div id="stats">
+    <span><b id="stat-nodes">--</b> nodes</span>
+    <span><b id="stat-edges">--</b> edges</span>
+  </div>
+</header>
+
+<div class="main">
+  <div id="graph-container">
+    <div id="loading">
+      <div class="spinner"></div>
+      <div id="loading-text">Loading...</div>
+    </div>
+    <div id="zoom-controls">
+      <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
+      <button class="zoom-btn" id="zoom-out" title="Zoom out">&minus;</button>
+      <button class="zoom-btn" id="zoom-fit" title="Fit all" style="font-size:11px;">Fit</button>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div class="panel">
+      <input id="search-input" type="text" placeholder="Search nodes..." autocomplete="off">
+      <div id="search-results"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Visible nodes</div>
+      <div class="slider-row">
+        <span id="node-count-val">300</span>
+        <input id="node-count-slider" type="range" min="50" max="800" step="50" value="300">
+        <span id="total-nodes">of --</span>
+      </div>
+      <div class="panel-title" style="margin-top:10px">Filter by type</div>
+      <div class="type-filters" id="type-filters"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Explore the graph</div>
+      <textarea id="query-input" rows="3" placeholder="How did Enron hide debt from regulators?"></textarea>
+      <button id="query-btn">Explore Graph</button>
+      <div id="query-examples">
+        <div class="chip" onclick="setQuery(this)">Who reported to Kenneth Lay?</div>
+        <div class="chip" onclick="setQuery(this)">How did Enron hide debt?</div>
+        <div class="chip" onclick="setQuery(this)">Which banks were involved?</div>
+        <div class="chip" onclick="setQuery(this)">Jeff Skilling's network</div>
+      </div>
+    </div>
+
+    <div class="panel" id="result-panel" style="display:none">
+      <div class="panel-title">Answer</div>
+      <div id="result-text"></div>
+      <div id="result-meta"></div>
+      <button id="reset-btn" onclick="resetHighlight()">Clear highlight</button>
+    </div>
+
+    <div class="panel" id="node-panel" style="display:none">
+      <div class="panel-title">Node</div>
+      <div id="node-label"></div>
+      <div id="node-type"></div>
+      <div id="node-desc"></div>
+      <div id="node-conns"></div>
+      <button id="explore-hood-btn">Explore neighborhood</button>
+      <div id="node-emails" style="margin-top:10px"></div>
+    </div>
+
+    <div id="legend">
+      <div class="legend-header">
+        <div class="legend-title">Legend</div>
+        <div class="legend-toggle">
+          <button class="legend-toggle-btn active" data-mode="connectivity">Connectivity</button>
+          <button class="legend-toggle-btn" data-mode="type">Type</button>
+        </div>
+      </div>
+      <div id="legend-connectivity">
+        <div class="legend-row"><div class="ldot" style="background:#7b8a9e;width:14px;height:14px"></div> Many connections (larger)</div>
+        <div class="legend-row"><div class="ldot" style="background:#7b8a9e;width:8px;height:8px"></div> Some connections</div>
+        <div class="legend-row"><div class="ldot" style="background:#7b8a9e;width:4px;height:4px"></div> Few connections (smaller)</div>
+      </div>
+      <div id="legend-type" style="display:none">
+        <div class="legend-row"><div class="ldot" style="background:#4a9eff"></div> Person</div>
+        <div class="legend-row"><div class="ldot" style="background:#ff9f43"></div> Company</div>
+        <div class="legend-row"><div class="ldot" style="background:#26de81"></div> Role</div>
+        <div class="legend-row"><div class="ldot" style="background:#fc5c65"></div> Event</div>
+        <div class="legend-row"><div class="ldot" style="background:#a29bfe"></div> Location</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ---- STATE ----
+let fullData = null;
+let visibleCount = 300;
+let colorMode = 'connectivity';
+let activeTypes = new Set(['person','company','role','event','location']);
+let neighborhoodMode = false;
+let neighborhoodNodeId = null;
+let querySubgraphNodeIds = null;
+let highlightNodes = new Set();
+let highlightLinks = new Set();
+let isHighlighting = false;
+let hoveredNodeId = null;
+let selectedNodeId = null;
+
+// D3 selections (stored as refs like the Epstein explorer)
+let svg, gMain, gLinks, gNodes, gLabels, gEdgeLabels;
+let simulation;
+let zoomBehavior;
+let currentNodes = [];
+let currentLinks = [];
+let nodeById = {};
+
+const typeColors = { person:'#4a9eff', company:'#ff9f43', role:'#26de81', event:'#fc5c65', location:'#a29bfe' };
+const BASE_COLOR = '#7b8a9e';
+
+// ---- RADIUS ----
+function nodeRadius(d) {
+  const maxDeg = fullData ? fullData.nodes[0]._degree : 1;
+  return 2 + Math.sqrt((d._degree || 0) / (maxDeg || 1)) * 12;
+}
+
+function nodeColor(d) {
+  return colorMode === 'type' ? (typeColors[d.type] || BASE_COLOR) : BASE_COLOR;
+}
+
+// ---- LOAD ----
+async function loadGraph() {
+  const loadingText = document.getElementById('loading-text');
+  loadingText.textContent = 'Loading graph.json...';
+  let data;
+  try {
+    const res = await fetch('/graph.json');
+    if (!res.ok) throw new Error(await res.text());
+    data = await res.json();
+  } catch (e) {
+    loadingText.textContent = 'Error: ' + e.message;
+    return;
+  }
+
+  const degMap = {};
+  data.links.forEach(l => {
+    degMap[l.source] = (degMap[l.source] || 0) + 1;
+    degMap[l.target] = (degMap[l.target] || 0) + 1;
+  });
+  data.nodes.forEach(n => { n._degree = degMap[n.id] || 0; });
+  data.nodes.sort((a, b) => b._degree - a._degree);
+
+  const neighborMap = {};
+  data.links.forEach(l => {
+    if (!neighborMap[l.source]) neighborMap[l.source] = new Set();
+    if (!neighborMap[l.target]) neighborMap[l.target] = new Set();
+    neighborMap[l.source].add(l.target);
+    neighborMap[l.target].add(l.source);
+  });
+  data.nodes.forEach(n => { n._neighbors = neighborMap[n.id] || new Set(); });
+
+  fullData = data;
+  document.getElementById('total-nodes').textContent = `of ${data.nodes.length.toLocaleString()}`;
+  buildTypeFilters(data.nodes);
+
+  loadingText.textContent = 'Building layout...';
+  await new Promise(r => setTimeout(r, 30));
+  initGraph();
+}
+
+function buildTypeFilters(nodes) {
+  const types = [...new Set(nodes.map(n => n.type || 'unknown'))].sort();
+  const container = document.getElementById('type-filters');
+  container.innerHTML = '';
+  types.forEach(t => {
+    const label = document.createElement('label');
+    label.className = 'type-filter';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true; cb.value = t;
+    cb.addEventListener('change', () => {
+      if (cb.checked) activeTypes.add(t); else activeTypes.delete(t);
+      rebuildGraph();
+    });
+    const dot = document.createElement('span');
+    dot.className = 'type-dot';
+    dot.style.background = typeColors[t] || '#888';
+    const span = document.createElement('span');
+    span.className = 'type-label';
+    span.textContent = t;
+    label.append(cb, dot, span);
+    container.appendChild(label);
+  });
+}
+
+function getSlicedData(count) {
+  let nodes;
+  if (querySubgraphNodeIds && querySubgraphNodeIds.length > 0) {
+    const qset = new Set(querySubgraphNodeIds);
+    nodes = fullData.nodes.filter(n => qset.has(n.id) && activeTypes.has(n.type || 'unknown'));
+  } else if (neighborhoodMode && neighborhoodNodeId) {
+    const center = fullData.nodes.find(n => n.id === neighborhoodNodeId);
+    if (center) {
+      const hop1 = center._neighbors || new Set();
+      const hop2 = new Set();
+      fullData.nodes.forEach(n => {
+        if (hop1.has(n.id) && n._neighbors) n._neighbors.forEach(nb => hop2.add(nb));
+      });
+      const allowed = new Set([neighborhoodNodeId, ...hop1, ...hop2]);
+      nodes = fullData.nodes.filter(n => allowed.has(n.id) && activeTypes.has(n.type || 'unknown'));
+    } else {
+      nodes = fullData.nodes.filter(n => activeTypes.has(n.type || 'unknown')).slice(0, count);
+    }
+  } else {
+    nodes = fullData.nodes.filter(n => activeTypes.has(n.type || 'unknown')).slice(0, count);
+  }
+  const nodeSet = new Set(nodes.map(n => n.id));
+  const links = fullData.links
+    .filter(l => nodeSet.has(l.source) && nodeSet.has(l.target))
+    .map(l => ({ source: l.source, target: l.target, label: l.label || '', weight: l.weight || 1 }));
+  return { nodes: nodes.map(n => ({...n})), links };
+}
+
+// ---- INIT GRAPH (D3 SVG) ----
+function initGraph() {
+  const container = document.getElementById('graph-container');
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+
+  svg = d3.select(container).append('svg')
+    .attr('width', width)
+    .attr('height', height);
+
+  gMain = svg.append('g');
+  gLinks = gMain.append('g').attr('class', 'links-group');
+  gEdgeLabels = gMain.append('g').attr('class', 'edge-labels-group');
+  gNodes = gMain.append('g').attr('class', 'nodes-group');
+  gLabels = gMain.append('g').attr('class', 'labels-group');
+
+  zoomBehavior = d3.zoom()
+    .scaleExtent([0.1, 20])
+    .on('zoom', e => gMain.attr('transform', e.transform));
+  svg.call(zoomBehavior);
+
+  // Click on background to deselect
+  svg.on('click', () => {
+    selectedNodeId = null;
+    document.getElementById('node-panel').style.display = 'none';
+  });
+
+  buildGraph();
+
+  setTimeout(() => {
+    document.getElementById('loading').style.display = 'none';
+    fitAll(600);
+  }, 1200);
+
+  window.addEventListener('resize', () => {
+    svg.attr('width', container.clientWidth).attr('height', container.clientHeight);
+  });
+}
+
+function buildGraph() {
+  const container = document.getElementById('graph-container');
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+  const gd = getSlicedData(visibleCount);
+  currentNodes = gd.nodes;
+  currentLinks = gd.links;
+  nodeById = {};
+  currentNodes.forEach(n => { nodeById[n.id] = n; });
+
+  document.getElementById('stat-nodes').textContent = currentNodes.length.toLocaleString();
+  document.getElementById('stat-edges').textContent = currentLinks.length.toLocaleString();
+
+  // Stop old simulation
+  if (simulation) simulation.stop();
+
+  // Clear old elements
+  gLinks.selectAll('*').remove();
+  gEdgeLabels.selectAll('*').remove();
+  gNodes.selectAll('*').remove();
+  gLabels.selectAll('*').remove();
+
+  // Links as SVG lines — every link is a real DOM element
+  const linkSel = gLinks.selectAll('line')
+    .data(currentLinks)
+    .join('line')
+    .attr('class', 'graph-link');
+
+  // Edge labels (hidden by default, shown on hover)
+  const edgeLabelSel = gEdgeLabels.selectAll('text')
+    .data(currentLinks)
+    .join('text')
+    .attr('class', 'edge-label')
+    .attr('display', 'none')
+    .text(d => d.label);
+
+  // Nodes as SVG circles
+  const nodeSel = gNodes.selectAll('circle')
+    .data(currentNodes, d => d.id)
+    .join('circle')
+    .attr('class', 'graph-node')
+    .attr('r', d => nodeRadius(d))
+    .attr('fill', d => nodeColor(d))
+    .call(d3.drag()
+      .on('start', (e, d) => {
+        if (!e.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => {
+        if (!e.active) simulation.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      })
+    );
+
+  // Node labels
+  const labelSel = gLabels.selectAll('text')
+    .data(currentNodes, d => d.id)
+    .join('text')
+    .attr('class', 'graph-node-label')
+    .attr('dy', d => nodeRadius(d) + 5)
+    .text(d => (d.label || d.id).slice(0, 28));
+
+  // ---- HOVER: native DOM events on every node ----
+  nodeSel
+    .on('mouseover', (e, d) => {
+      e.stopPropagation();
+      hoveredNodeId = d.id;
+      applyHoverStyles(linkSel, nodeSel, labelSel, edgeLabelSel);
+    })
+    .on('mouseout', (e, d) => {
+      hoveredNodeId = null;
+      applyHoverStyles(linkSel, nodeSel, labelSel, edgeLabelSel);
+    })
+    .on('click', (e, d) => {
+      e.stopPropagation();
+      selectedNodeId = d.id;
+      showNodePanel(d);
+    });
+
+  // Force simulation
+  const maxDeg = fullData.nodes[0]._degree || 1;
+  simulation = d3.forceSimulation(currentNodes)
+    .force('link', d3.forceLink(currentLinks).id(d => d.id).distance(50).strength(0.25))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 2).strength(0.5))
+    .force('radial', d3.forceRadial(
+      d => (1 - Math.sqrt((d._degree || 0) / maxDeg)) * 300 + 20,
+      width / 2, height / 2
+    ).strength(0.4))
+    .alphaDecay(0.018)
+    .velocityDecay(0.3)
+    .on('tick', () => {
+      linkSel
+        .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+
+      edgeLabelSel
+        .attr('x', d => (d.source.x + d.target.x) / 2)
+        .attr('y', d => (d.source.y + d.target.y) / 2);
+
+      nodeSel.attr('cx', d => d.x).attr('cy', d => d.y);
+      labelSel.attr('x', d => d.x).attr('y', d => d.y);
+    });
+
+  // Store selections for later use
+  svg._linkSel = linkSel;
+  svg._nodeSel = nodeSel;
+  svg._labelSel = labelSel;
+  svg._edgeLabelSel = edgeLabelSel;
+}
+
+// ---- HOVER STYLES (applied via D3 selections, like Epstein explorer) ----
+function applyHoverStyles(linkSel, nodeSel, labelSel, edgeLabelSel) {
+  if (!linkSel) return;
+
+  if (isHighlighting) {
+    linkSel.attr('class', d => {
+      const sid = typeof d.source === 'object' ? d.source.id : d.source;
+      const tid = typeof d.target === 'object' ? d.target.id : d.target;
+      const key = `${sid}|${tid}`, rkey = `${tid}|${sid}`;
+      return 'graph-link ' + ((highlightLinks.has(key) || highlightLinks.has(rkey)) ? 'hl-active' : 'hl-dim');
+    });
+    nodeSel
+      .attr('fill', d => highlightNodes.has(d.id) ? '#e8c547' : '#1e1e1e')
+      .attr('r', d => nodeRadius(d));
+    labelSel.attr('class', d => 'graph-node-label' + (highlightNodes.has(d.id) ? '' : ' dim-label'));
+    edgeLabelSel.attr('display', d => {
+      const sid = typeof d.source === 'object' ? d.source.id : d.source;
+      const tid = typeof d.target === 'object' ? d.target.id : d.target;
+      const key = `${sid}|${tid}`, rkey = `${tid}|${sid}`;
+      return (highlightLinks.has(key) || highlightLinks.has(rkey)) ? null : 'none';
+    });
+    return;
+  }
+
+  if (hoveredNodeId) {
+    const neighbors = nodeById[hoveredNodeId]?._neighbors || new Set();
+    linkSel.attr('class', d => {
+      const sid = typeof d.source === 'object' ? d.source.id : d.source;
+      const tid = typeof d.target === 'object' ? d.target.id : d.target;
+      return 'graph-link ' + ((sid === hoveredNodeId || tid === hoveredNodeId) ? 'hover-connected' : 'hover-dim');
+    });
+    nodeSel.attr('fill', d => {
+      if (d.id === hoveredNodeId) return '#ffffff';
+      if (neighbors.has(d.id)) return nodeColor(d);
+      return '#252525';
+    });
+    labelSel.attr('class', d => {
+      if (d.id === hoveredNodeId) return 'graph-node-label hover-label';
+      if (neighbors.has(d.id)) return 'graph-node-label';
+      return 'graph-node-label dim-label';
+    });
+    edgeLabelSel.attr('display', d => {
+      const sid = typeof d.source === 'object' ? d.source.id : d.source;
+      const tid = typeof d.target === 'object' ? d.target.id : d.target;
+      return (sid === hoveredNodeId || tid === hoveredNodeId) && d.label ? null : 'none';
+    });
+  } else {
+    linkSel.attr('class', 'graph-link');
+    nodeSel.attr('fill', d => nodeColor(d));
+    labelSel.attr('class', 'graph-node-label');
+    edgeLabelSel.attr('display', 'none');
+  }
+}
+
+function rebuildGraph() {
+  if (!svg || !fullData) return;
+  buildGraph();
+}
+
+function fitAll(duration) {
+  if (!svg || !currentNodes.length) return;
+  const container = document.getElementById('graph-container');
+  const w = container.clientWidth, h = container.clientHeight;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  currentNodes.forEach(n => {
+    if (n.x == null) return;
+    const r = nodeRadius(n);
+    x0 = Math.min(x0, n.x - r); y0 = Math.min(y0, n.y - r);
+    x1 = Math.max(x1, n.x + r); y1 = Math.max(y1, n.y + r);
+  });
+  if (!isFinite(x0)) return;
+  const dx = x1 - x0, dy = y1 - y0;
+  const scale = 0.85 / Math.max(dx / w, dy / h);
+  const tx = w / 2 - scale * (x0 + dx / 2);
+  const ty = h / 2 - scale * (y0 + dy / 2);
+  svg.transition().duration(duration)
+    .call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+// ---- ZOOM CONTROLS ----
+document.getElementById('zoom-in').addEventListener('click', () => {
+  svg.transition().duration(300).call(zoomBehavior.scaleBy, 1.5);
+});
+document.getElementById('zoom-out').addEventListener('click', () => {
+  svg.transition().duration(300).call(zoomBehavior.scaleBy, 1 / 1.5);
+});
+document.getElementById('zoom-fit').addEventListener('click', () => fitAll(400));
+
+// ---- NODE COUNT SLIDER ----
+document.getElementById('node-count-slider').addEventListener('input', function () {
+  visibleCount = +this.value;
+  document.getElementById('node-count-val').textContent = visibleCount;
+});
+document.getElementById('node-count-slider').addEventListener('change', function () {
+  neighborhoodMode = false;
+  rebuildGraph();
+});
+
+// ---- LEGEND TOGGLE ----
+document.querySelectorAll('.legend-toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.legend-toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    colorMode = btn.dataset.mode;
+    document.getElementById('legend-connectivity').style.display = colorMode === 'connectivity' ? 'block' : 'none';
+    document.getElementById('legend-type').style.display = colorMode === 'type' ? 'block' : 'none';
+    if (svg._nodeSel) svg._nodeSel.attr('fill', d => nodeColor(d));
+  });
+});
+
+// ---- HIGHLIGHT (from query results) ----
+function highlightSubgraph(nodeIds, edgeIds) {
+  if (!nodeIds.length) return;
+  isHighlighting = true;
+  highlightNodes = new Set(nodeIds);
+  highlightLinks = new Set(edgeIds);
+  querySubgraphNodeIds = nodeIds;
+  neighborhoodMode = false;
+  rebuildGraph();
+  if (svg._linkSel) applyHoverStyles(svg._linkSel, svg._nodeSel, svg._labelSel, svg._edgeLabelSel);
+  setTimeout(() => fitAll(600), 100);
+}
+
+function resetHighlight() {
+  isHighlighting = false;
+  highlightNodes = new Set();
+  highlightLinks = new Set();
+  querySubgraphNodeIds = null;
+  if (svg._linkSel) applyHoverStyles(svg._linkSel, svg._nodeSel, svg._labelSel, svg._edgeLabelSel);
+  document.getElementById('result-panel').style.display = 'none';
+  neighborhoodMode = false;
+  rebuildGraph();
+}
+
+// ---- NODE PANEL ----
+function showNodePanel(d) {
+  document.getElementById('node-label').textContent = d.label || d.id;
+  document.getElementById('node-type').textContent = (d.type || '').toUpperCase();
+  document.getElementById('node-type').style.color = typeColors[d.type] || '#888';
+  document.getElementById('node-desc').textContent = d.description || '';
+
+  const links = fullData.links.filter(l => l.source === d.id || l.target === d.id).slice(0, 20);
+  document.getElementById('node-conns').innerHTML = links.map(l => {
+    const otherId = l.source === d.id ? l.target : l.source;
+    const other = fullData.nodes.find(n => n.id === otherId);
+    const otherLabel = other ? (other.label || other.id) : otherId;
+    return `<div style="border-bottom:1px solid #1a1a1a;padding:1px 0"><span style="color:#555">${l.label || '→'}</span> ${otherLabel}</div>`;
+  }).join('') || '<span style="color:#555">No connections</span>';
+
+  document.getElementById('explore-hood-btn').onclick = () => {
+    neighborhoodMode = true;
+    neighborhoodNodeId = d.id;
+    rebuildGraph();
+  };
+  document.getElementById('node-panel').style.display = 'block';
+
+  // Fetch source emails
+  const emailsEl = document.getElementById('node-emails');
+  const chunks = d.chunks || [];
+  if (!chunks.length) {
+    emailsEl.innerHTML = '';
+    return;
+  }
+  emailsEl.innerHTML = '<div class="emails-title">Loading emails...</div>';
+  fetch('/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chunks: chunks.slice(0, 5) }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    const emails = data.emails || [];
+    if (!emails.length) {
+      emailsEl.innerHTML = '<div class="emails-title">No emails found</div>';
+      return;
+    }
+    emailsEl.innerHTML = `<div class="emails-title">Source emails (${d.chunk_count || chunks.length} total)</div>` +
+      emails.map(e => `<div class="email-card">
+        <div class="email-subject">${esc(e.subject)}</div>
+        <div class="email-meta">${esc(e.from)} → ${esc(e.to)}${e.date ? ' · ' + esc(e.date) : ''}</div>
+        <div class="email-body">${esc(e.body)}</div>
+        ${e.body.length > 200 ? '<div class="email-toggle" onclick="const b=this.previousElementSibling;b.classList.toggle(\'expanded\');this.textContent=b.classList.contains(\'expanded\')?\'Show less\':\'Show more\'">Show more</div>' : ''}
+      </div>`).join('');
+  })
+  .catch(() => { emailsEl.innerHTML = ''; });
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// ---- SEARCH ----
+document.getElementById('search-input').addEventListener('input', function () {
+  const q = this.value.trim().toLowerCase();
+  const el = document.getElementById('search-results');
+  el.innerHTML = '';
+  if (!q || !fullData) return;
+  fullData.nodes.filter(n => (n.label || n.id).toLowerCase().includes(q)).slice(0, 20).forEach(n => {
+    const d = document.createElement('div');
+    d.className = 'sr-item';
+    d.innerHTML = `<span>${n.label || n.id}</span><span class="sr-type">${n.type || ''} &middot; ${n._degree}</span>`;
+    d.addEventListener('click', () => {
+      // Find the node in current visible set
+      const vis = currentNodes.find(cn => cn.id === n.id);
+      if (vis && vis.x != null) {
+        const container = document.getElementById('graph-container');
+        const w = container.clientWidth, h = container.clientHeight;
+        svg.transition().duration(500)
+          .call(zoomBehavior.transform, d3.zoomIdentity.translate(w/2, h/2).scale(4).translate(-vis.x, -vis.y));
+      }
+      showNodePanel(n);
+      el.innerHTML = '';
+      this.value = '';
+    });
+    el.appendChild(d);
+  });
+});
+
+// ---- RENDER RESULT ----
+function mdBold(text) {
+  // Escape HTML first, then apply bold markdown
+  if (!text) return '';
+  return esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function formatPath(text) {
+  // Escape, apply bold, then dim the [relationship] brackets
+  if (!text) return '';
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(\[.+?\])/g, '<span class="rel">$1</span>');
+}
+
+function renderResult(data) {
+  let html = '';
+
+  const answer = data.answer || data.explanation || '';
+  if (answer) {
+    html += `<div class="section-label">Answer</div>`;
+    html += `<div class="answer">${mdBold(answer)}</div>`;
+  }
+
+  const details = data.details || [];
+  if (details.length) {
+    html += `<div class="section-label">Findings</div>`;
+    html += '<ul class="detail-list">';
+    details.forEach(d => { html += `<li>${mdBold(d)}</li>`; });
+    html += '</ul>';
+  }
+
+  const paths = data.paths || [];
+  if (paths.length) {
+    html += `<div class="section-label">Key paths</div>`;
+    html += '<div class="paths-section">';
+    paths.forEach(p => { html += `<div class="path-item">${formatPath(p)}</div>`; });
+    html += '</div>';
+  }
+
+  if (!html) {
+    html = `<div class="section-label">Answer</div><div class="answer">${mdBold(data.explanation || 'No response.')}</div>`;
+  }
+
+  return html;
+}
+
+// ---- QUERY (STREAMING) ----
+function setQuery(el) { document.getElementById('query-input').value = el.textContent; }
+
+document.getElementById('query-btn').addEventListener('click', async () => {
+  const q = document.getElementById('query-input').value.trim();
+  if (!q) return;
+  const btn = document.getElementById('query-btn');
+  btn.disabled = true;
+  btn.textContent = 'Exploring...';
+  btn.style.animation = 'pulse 1.5s ease-in-out infinite';
+
+  const resultText = document.getElementById('result-text');
+  const resultMeta = document.getElementById('result-meta');
+  resultText.innerHTML = '<span class="streaming-dots">Searching graph...</span>';
+  resultMeta.textContent = '';
+  document.getElementById('result-panel').style.display = 'block';
+
+  try {
+    const res = await fetch('/query-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Request failed');
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let streamedText = '';
+    let receivedChunks = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = JSON.parse(line.slice(6));
+        if (payload.type === 'text') {
+          streamedText += payload.text;
+          receivedChunks++;
+          if (receivedChunks === 3) {
+            resultText.innerHTML = '<span class="streaming-dots">Analysing relationships...</span>';
+          } else if (receivedChunks === 10) {
+            resultText.innerHTML = '<span class="streaming-dots">Building answer...</span>';
+          }
+        } else if (payload.type === 'result') {
+          const data = payload.data;
+          resultText.innerHTML = renderResult(data);
+          const u = data.usage || {};
+          resultMeta.textContent =
+            `${(data.nodeIds || []).length} nodes · ${(data.edgeIds || []).length} edges · ${u.input_tokens || 0} in · ${u.output_tokens || 0} out` +
+            (u.cache_read_input_tokens ? ` · ${u.cache_read_input_tokens.toLocaleString()} cached` : '');
+          highlightSubgraph(data.nodeIds || [], data.edgeIds || []);
+        } else if (payload.type === 'error') {
+          throw new Error(payload.error);
+        }
+      }
+    }
+  } catch (e) {
+    resultText.innerHTML = '<span style="color:#fc5c65">Error: ' + e.message + '</span>';
+    document.getElementById('result-panel').style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Explore Graph';
+    btn.style.animation = '';
+  }
+});
+
+document.getElementById('query-input').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') document.getElementById('query-btn').click();
+});
+
+loadGraph();
+</script>
+</body>
+</html>
