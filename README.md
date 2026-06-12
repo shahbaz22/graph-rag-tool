@@ -106,7 +106,7 @@ First startup builds `data/emails.db` from the zip (~60 seconds, one-time). Afte
 - **Hover highlighting** — hover any node to dim unrelated nodes and show edge labels on connected links
 - **Source emails** — click any node to see the original Enron emails that mention it (subject, from, to, date, scrollable body)
 - **Natural language queries** — ask questions in plain English, get structured answers (direct answer + detail bullets + key paths) grounded in both graph relationships and original email content
-- **Query result highlighting** — matched nodes turn gold, graph auto-zooms to the relevant subgraph
+- **Query result highlighting** — the graph rebuilds to show only the returned nodes; gold nodes and gold edges are Claude's direct answer; lighter grey edges are other connections between those nodes shown for context
 - **Streaming responses** — answers stream in via SSE with progress indicators
 
 ## How querying works
@@ -133,7 +133,11 @@ User question: "How did Enron scam people?"
         e.g. "enron", "enron corp.", "securities and exchange commission", ...
                     │
                     ▼
-        Expand each seed to its 1-hop neighbors via the adjacency map
+        Expand only high-confidence seeds (score ≥ 2, i.e. matched multiple
+        keywords) to their 1-hop neighbors via the adjacency map.
+        Single-keyword matches are included as nodes but not expanded —
+        this keeps the subgraph focused on the queried entity rather than
+        flooding it with neighbors of loosely-related nodes.
         (capped at 200 total nodes)
                     │
                     ▼
@@ -145,7 +149,7 @@ User question: "How did Enron scam people?"
 ```
 
 This runs in milliseconds using two in-memory indexes built at startup:
-- **Keyword index**: maps each word → list of node IDs whose label/description contains it
+- **Keyword index**: maps each word → set of node IDs whose label, description, or **edge label** contains it. Edge labels are indexed against both endpoint node IDs, so a query like "who reported to Kenneth Lay?" seeds on nodes connected by a "reported to" edge, not just nodes whose name contains "reported"
 - **Adjacency map**: maps each node ID → set of neighbor node IDs
 
 ### Step 2: Retrieve source emails
@@ -207,7 +211,13 @@ Sonnet returns structured JSON streamed via Server-Sent Events:
 }
 ```
 
-The frontend renders this as a structured answer panel (direct answer, bullet points, key paths) and highlights the returned `nodeIds` and `edgeIds` on the graph, auto-zooming to the relevant area.
+The frontend renders this as a structured answer panel (direct answer, bullet points, key paths) and rebuilds the graph to show only the returned nodes, auto-zooming to fit them.
+
+**Edge colours in the query view:**
+- **Gold edges** — the specific relationships Claude called out in `edgeIds` as directly relevant to the answer
+- **Light grey edges** — other connections that exist in the full graph between the returned nodes; shown for context but not highlighted as key relationships
+
+Only nodes that have at least one edge to another returned node are shown — nodes with no connections in the result set are dropped as noise from the keyword expansion step.
 
 ### Why this works
 

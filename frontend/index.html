@@ -242,7 +242,6 @@
 <header>
   <div>
     <h1>Enron GraphRAG</h1>
-    <div class="sub">Knowledge graph explorer</div>
   </div>
   <div id="stats">
     <span><b id="stat-nodes">--</b> nodes</span>
@@ -459,6 +458,15 @@ function getSlicedData(count) {
   const links = fullData.links
     .filter(l => nodeSet.has(l.source) && nodeSet.has(l.target))
     .map(l => ({ source: l.source, target: l.target, label: l.label || '', weight: l.weight || 1 }));
+
+  // In query mode, drop nodes with no edges to any other selected node — they
+  // arrived via keyword noise in the subgraph expansion, not through a real
+  // connection to the queried entity.
+  if (querySubgraphNodeIds && querySubgraphNodeIds.length > 0) {
+    const connectedIds = new Set(links.flatMap(l => [l.source, l.target]));
+    return { nodes: nodes.filter(n => connectedIds.has(n.id)).map(n => ({...n})), links };
+  }
+
   return { nodes: nodes.map(n => ({...n})), links };
 }
 
@@ -623,7 +631,10 @@ function applyHoverStyles(linkSel, nodeSel, labelSel, edgeLabelSel) {
       const sid = typeof d.source === 'object' ? d.source.id : d.source;
       const tid = typeof d.target === 'object' ? d.target.id : d.target;
       const key = `${sid}|${tid}`, rkey = `${tid}|${sid}`;
-      return 'graph-link ' + ((highlightLinks.has(key) || highlightLinks.has(rkey)) ? 'hl-active' : 'hl-dim');
+      // In query mode the subgraph is already filtered to relevant nodes, so
+      // non-highlighted edges should stay visible rather than being hidden.
+      const dimClass = querySubgraphNodeIds ? '' : 'hl-dim';
+      return 'graph-link ' + ((highlightLinks.has(key) || highlightLinks.has(rkey)) ? 'hl-active' : dimClass);
     });
     nodeSel
       .attr('fill', d => highlightNodes.has(d.id) ? '#e8c547' : '#1e1e1e')
@@ -671,6 +682,9 @@ function applyHoverStyles(linkSel, nodeSel, labelSel, edgeLabelSel) {
 function rebuildGraph() {
   if (!svg || !fullData) return;
   buildGraph();
+  if (isHighlighting && svg._linkSel) {
+    applyHoverStyles(svg._linkSel, svg._nodeSel, svg._labelSel, svg._edgeLabelSel);
+  }
 }
 
 function fitAll(duration) {

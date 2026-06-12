@@ -1,5 +1,5 @@
 """
-Demo server — serves the frontend and proxies Claude Sonnet queries.
+Demo server — serves the frontend and proxies Claude Haiku queries.
 
 Usage:
   python server.py
@@ -29,7 +29,7 @@ app = Flask(__name__, static_folder="frontend")
 
 GRAPH_JSON = Path(__file__).parent / "graph.json"
 EMAILS_ZIP = Path(__file__).parent / "data" / "enron_emails.zip"
-MODEL = "eu.anthropic.claude-sonnet-4-6"
+MODEL = "claude-sonnet-4-6"
 # Max seed nodes matched by keyword; their 1-hop neighbours are also included
 SUBGRAPH_SEED_LIMIT = 50
 SUBGRAPH_NEIGHBOUR_LIMIT = 200  # cap total nodes in the subgraph
@@ -130,13 +130,18 @@ def load_graph() -> dict:
             adj[t].add(s)
         _adjacency = adj
 
-        # build keyword → [node_id] index
-        kidx = defaultdict(list)
+        # build keyword → node_id index from node text and edge labels
+        kidx: dict = defaultdict(set)
         for n in data.get("nodes", []):
             nid = n["id"]
             text = " ".join([n.get("label", ""), n.get("description", "")])
             for word in set(_tokenize(text)):
-                kidx[word].append(nid)
+                kidx[word].add(nid)
+        for e in data.get("links", []):
+            s, t = e["source"], e["target"]
+            for word in set(_tokenize(e.get("label", ""))):
+                kidx[word].add(s)
+                kidx[word].add(t)
         _keyword_index = kidx
 
     return _graph_cache
@@ -156,8 +161,13 @@ def build_subgraph(question: str) -> tuple[str, list[str]]:
 
     seeds = sorted(scores, key=lambda x: -scores[x])[:SUBGRAPH_SEED_LIMIT]
 
+    # Only expand neighbors from high-confidence seeds (matched ≥2 keywords).
+    # Single-keyword matches are included as nodes but don't flood the subgraph
+    # with their unrelated neighbors.
+    expand_seeds = [s for s in seeds if scores[s] >= 2] or seeds[:5]
+
     node_set: set[str] = set(seeds)
-    for seed in seeds:
+    for seed in expand_seeds:
         for nb in _adjacency.get(seed, set()):
             node_set.add(nb)
             if len(node_set) >= SUBGRAPH_NEIGHBOUR_LIMIT:
