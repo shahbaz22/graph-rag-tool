@@ -207,18 +207,23 @@ This file can be several megabytes and holds thousands of nodes and edges.
 
    **Why it's needed:** the graph has thousands of nodes. Without this index, every query would have to scan every node's text to find matches — slow and wasteful. The index is built once at startup and inverts the relationship: instead of asking "does this node contain the word?", you ask "which nodes contain this word?" and get the answer instantly.
 
-   **What it's built from and how:** the index is constructed in `load_graph()` by looping over every node in `graph.json`:
+   **What it's built from and how:** the index is constructed in `load_graph()` by looping over every node and every edge in `graph.json`:
 
    ```python
-   kidx = defaultdict(list)
+   kidx = defaultdict(set)
    for n in data.get("nodes", []):
        nid = n["id"]
        text = " ".join([n.get("label", ""), n.get("description", "")])
        for word in set(_tokenize(text)):
-           kidx[word].append(nid)
+           kidx[word].add(nid)
+   for e in data.get("links", []):
+       s, t = e["source"], e["target"]
+       for word in set(_tokenize(e.get("label", ""))):
+           kidx[word].add(s)
+           kidx[word].add(t)
    ```
 
-   For a node like:
+   **Node pass** — for a node like:
    ```json
    { "id": "kenneth lay", "label": "Kenneth Lay", "description": "Chairman and former CEO of Enron" }
    ```
@@ -227,18 +232,32 @@ This file can be several megabytes and holds thousands of nodes and edges.
    1. Concatenate label + description → `"Kenneth Lay Chairman and former CEO of Enron"`
    2. Lowercase and strip non-alpha → `["kenneth", "lay", "chairman", "and", "former", "ceo", "of", "enron"]`
    3. Remove stopwords (`"and"`, `"of"`, `"former"`) → `{"kenneth", "lay", "chairman", "ceo", "enron"}`
-   4. For each surviving word, append `"kenneth lay"` to that word's entry in `kidx`
+   4. For each surviving word, add `"kenneth lay"` to that word's set in `kidx`
 
-   After all nodes are processed:
+   **Edge pass** — for an edge like:
+   ```json
+   { "source": "jeff skilling", "target": "kenneth lay", "label": "reported to" }
    ```
-   kidx["ceo"]      → ["kenneth lay", "jeffrey skilling", ...]
-   kidx["chairman"] → ["kenneth lay", "board of directors", ...]
-   kidx["enron"]    → ["kenneth lay", "enron", "jeffrey skilling", ...]
+
+   The steps are:
+   1. Tokenise the edge label → `{"reported"}`  (stopword "to" removed)
+   2. Add **both** endpoint IDs to `kidx["reported"]` → adds `"jeff skilling"` and `"kenneth lay"`
+
+   This means a query like "who reported to Kenneth Lay?" seeds on nodes connected by a `"reported to"` edge — not just nodes whose name or description contains the word. Without the edge pass, `"reported"` would only match nodes whose description text happens to contain that word (e.g. a football player "reported to be injured"), missing the actual reporting relationships entirely.
+
+   After both passes:
    ```
+   kidx["ceo"]      → {"kenneth lay", "jeffrey skilling", ...}
+   kidx["chairman"] → {"kenneth lay", "board of directors", ...}
+   kidx["reported"] → {"jeff skilling", "kenneth lay", "andrew fastow", ...}  ← from edge labels
+   kidx["enron"]    → {"kenneth lay", "enron", "jeffrey skilling", ...}
+   ```
+
+   A `set` is used instead of a list so that the same node ID is never added twice for the same word — an important property since the same node can be the endpoint of many edges sharing the same label word.
 
    The label is the canonical display name chosen by `merge.py` as the most-seen capitalisation across all extractions. The description is the one-line text Haiku wrote for that entity — and crucially, only the **first** description ever seen for that node survives into the graph (the `merge.py` limitation discussed in Step 0).
 
-   This means the keyword index is searching a very thin slice of what the emails actually say — one name and one sentence per entity, regardless of how many emails mention them. If Haiku's first description for Kenneth Lay happened to be `"Enron executive"` rather than `"Chairman and former CEO of Enron"`, the node would never score on queries containing `"ceo"` or `"chairman"` — even though thousands of emails discuss him in those terms.
+   This means the node-pass of the keyword index is searching a very thin slice of what the emails actually say — one name and one sentence per entity, regardless of how many emails mention them. If Haiku's first description for Kenneth Lay happened to be `"Enron executive"` rather than `"Chairman and former CEO of Enron"`, the node would never score on queries containing `"ceo"` or `"chairman"` — even though thousands of emails discuss him in those terms. The edge pass partially compensates: it surfaces nodes through the *relationships* they participate in, not just through their description text.
 
    **Why "ceo" maps to both Lay and Skilling:** this is not a contradiction. It means the word "ceo" appears in both nodes' description text — Haiku described Skilling as `"CEO of Enron"` and Lay as `"Chairman and former CEO of Enron"` in different emails. The index has no concept of time or role exclusivity, only string matches. Both nodes score equally on the word "ceo", and it is left to the LLM — using edge labels, weights, and email excerpts — to determine who held the role when.
 
